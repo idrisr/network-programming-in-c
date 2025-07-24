@@ -1,7 +1,13 @@
+#if defined(__linux__)
 #define _GNU_SOURCE /* To get defns of NI_MAXSERV and NI_MAXHOST */
+#include <linux/if_link.h>
+#elif defined(__APPLE__)
+#include <net/if.h>
+#include <net/if_dl.h>
+#endif
+
 #include <arpa/inet.h>
 #include <ifaddrs.h>
-#include <linux/if_link.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,8 +34,12 @@ int main() {
 
     printf("--------------------------------\n");
     printf("%-8s %s (%d)\n", ifa->ifa_name,
-           (family == AF_PACKET)  ? "AF_PACKET"
-           : (family == AF_INET)  ? "AF_INET"
+#if defined(__linux__)
+           (family == AF_PACKET)  ? "AF_PACKET" :
+#elif defined(__APPLE__)
+           (family == AF_LINK) ? "AF_LINK" :
+#endif
+           (family == AF_INET)    ? "AF_INET"
            : (family == AF_INET6) ? "AF_INET6"
                                   : "???",
            family);
@@ -46,6 +56,7 @@ int main() {
 
       printf("address: %s\n", host);
 
+#if defined(__linux__)
     } else if (family == AF_PACKET && ifa->ifa_data != NULL) {
       struct rtnl_link_stats *stats = ifa->ifa_data;
 
@@ -53,6 +64,17 @@ int main() {
              "\t\ttx_bytes   = %10u; rx_bytes   = %10u\n",
              stats->tx_packets, stats->rx_packets, stats->tx_bytes,
              stats->rx_bytes);
+#elif defined(__APPLE__)
+    } else if (family == AF_LINK && ifa->ifa_data != NULL) {
+      struct if_data *stats = (struct if_data *)ifa->ifa_data;
+
+      printf("\t\trx_packets = %10llu; tx_packets = %10llu\n"
+             "\t\trx_bytes   = %10llu; tx_bytes   = %10llu\n",
+             (unsigned long long)stats->ifi_ipackets,
+             (unsigned long long)stats->ifi_opackets,
+             (unsigned long long)stats->ifi_ibytes,
+             (unsigned long long)stats->ifi_obytes);
+#endif
     }
   }
 
