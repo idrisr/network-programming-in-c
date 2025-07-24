@@ -1,67 +1,62 @@
-/*
- * MIT License
- *
- * Copyright (c) 2018 Lewis Van Winkle
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
-#include <sys/socket.h>
-#include <netdb.h>
+#define _GNU_SOURCE /* To get defns of NI_MAXSERV and NI_MAXHOST */
+#include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <linux/if_link.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <sys/socket.h>
+#include <unistd.h>
 
 int main() {
+  // call getifaddrs to get addresses of local host
 
-    struct ifaddrs *addresses;
+  struct ifaddrs *addrs;
+  sa_family_t family;
+  int s;
+  char host[NI_MAXHOST];
 
-    if (getifaddrs(&addresses) == -1) {
-        printf("getifaddrs call failed\n");
-        return -1;
+  if (getifaddrs(&addrs) == -1) {
+    printf("Bad\n");
+    return 1;
+  }
+
+  for (struct ifaddrs *ifa = addrs; ifa != NULL; ifa = ifa->ifa_next) {
+    if (ifa->ifa_addr == NULL)
+      continue;
+    family = ifa->ifa_addr->sa_family;
+
+    printf("--------------------------------\n");
+    printf("%-8s %s (%d)\n", ifa->ifa_name,
+           (family == AF_PACKET)  ? "AF_PACKET"
+           : (family == AF_INET)  ? "AF_INET"
+           : (family == AF_INET6) ? "AF_INET6"
+                                  : "???",
+           family);
+
+    if (family == AF_INET || family == AF_INET6) {
+      s = getnameinfo(ifa->ifa_addr,
+                      (family == AF_INET) ? sizeof(struct sockaddr_in)
+                                          : sizeof(struct sockaddr_in6),
+                      host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+      if (s != 0) {
+        printf("getnameinfo() failed: %s\n", gai_strerror(s));
+        exit(EXIT_FAILURE);
+      }
+
+      printf("address: %s\n", host);
+
+    } else if (family == AF_PACKET && ifa->ifa_data != NULL) {
+      struct rtnl_link_stats *stats = ifa->ifa_data;
+
+      printf("\t\ttx_packets = %10u; rx_packets = %10u\n"
+             "\t\ttx_bytes   = %10u; rx_bytes   = %10u\n",
+             stats->tx_packets, stats->rx_packets, stats->tx_bytes,
+             stats->rx_bytes);
     }
+  }
 
-    struct ifaddrs *address = addresses;
-    while(address) {
-        if (address->ifa_addr == NULL) { 
-            address = address->ifa_next;
-            continue;
-        }
-        int family = address->ifa_addr->sa_family;
-        if (family == AF_INET || family == AF_INET6) {
-
-            printf("%s\t", address->ifa_name);
-            printf("%s\t", family == AF_INET ? "IPv4" : "IPv6");
-
-            char ap[100];
-            const int family_size = family == AF_INET ?
-                sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
-            getnameinfo(address->ifa_addr,
-                    family_size, ap, sizeof(ap), 0, 0, NI_NUMERICHOST);
-            printf("\t%s\n", ap);
-
-        }
-        address = address->ifa_next;
-    }
-
-
-    freeifaddrs(addresses);
-    return 0;
+  // free the addresses
+  freeifaddrs(addrs);
+  return 0;
 }

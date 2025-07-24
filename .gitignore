@@ -14,9 +14,12 @@
 *.lot
 *.bbl
 *.blg
+build/
 .direnv
 .envrc
 result
 samples/
 .pre-commit-config.yaml
 .ccls-cache
+session.yaml
+.envrc
